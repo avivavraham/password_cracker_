@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cracking Progress</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript">
+        function refreshContent() {
+            $.ajax({
+                url: '/get_updated_content',
+                type: 'GET',
+                success: function(response) {
+                    var content = response.content;
+                    var display = document.getElementById('display-content');
+                    display.innerHTML = '';  // Clear previous content
+                    for (var i = 0; i < content.length; i++) {
+                        var row = document.createElement('p');
+                        row.textContent = content[i];
+                        display.appendChild(row);
+                    }
+                }
+            });
+        }
+
+        // Refresh content every 1 seconds
+        setInterval(refreshContent, 1000);
+    </script>
+</head>
+<body>
+    <div id="display-content"></div>
+</body>
+</html>
