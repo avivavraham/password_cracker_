@@ -8,16 +8,10 @@ import threading
 import time
 import json
 
-# TODO: go over all of the code in the master
-# TODO: add error handling
-# TODO: add documentation to all methods + TaskQueue
-# TODO: add presumptions about input file
-# TODO: add concurrent to the system
-# TODO: add end point for downloading the cracked file
-# TODO: add end point for adding a new minion address
 # TODO: add read me file
 
-
+# please insert the minions addresses here
+MASTER = 'http://127.0.0.1:5000'
 MINIONS = ['http://127.0.0.1:5001', 'http://127.0.0.1:5002', 'http://127.0.0.1:5003']
 UPLOAD_FOLDER = 'C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\input_files'
 ALLOWED_EXTENSIONS = {'txt'}
@@ -25,13 +19,12 @@ headers = {'Content-Type': 'application/json'}  # Set the Content-Type header
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 SOLVING = False  # boolean flag to indicate if the server is currently solving the md5 hashing.
-hash_codes = []  # List to store hash codes from the uploaded file
-passwords = []  # List to store the passwords that were founded
-found_passwords = []  # List to indicate the passwords that were founded
-task_queue = TaskQueue()  # task queue for the current unsolved hashed password
-NUMBER_OF_TASKS = 12
+hash_codes = []  # List to store hash codes from the uploaded file.
+hash_codes_processed = []  # List to store the passwords that were founded.
+found_passwords = []  # List to indicate the passwords that were founded.
+task_queue = TaskQueue()  # task queue for the current unsolved hashed password.
+NUMBER_OF_TASKS = 12  # cannot be zero.
 
 
 def allowed_file(filename):
@@ -53,12 +46,12 @@ def generate_tasks_for_minions(hashed_password, split, hashed_password_index):
     :param split: how many tasks to split for.
     :return: queue of tasks for the specific hashed password.
     """
-    task_queue = TaskQueue()
     """
        05X-XXXXXXX is the given inputs. so the range of numbers is from 050-0000000 to 059-9999999
        simplified to: 00000000 up to 99999999 a range of 10**8 options.
        so each one of the minions will get approximately (10**8 / Number_of_minions) options to check.
     """
+    task_queue_for_distribute = TaskQueue()
     options = 10 ** 8 // split
     for j in range(split):
         start_of_range = j * options
@@ -75,8 +68,8 @@ def generate_tasks_for_minions(hashed_password, split, hashed_password_index):
         # Convert the task_data dictionary to a JSON string
         json_data = json.dumps(task_data)
         # append the task into the queue
-        task_queue.add_task(task_id=j, task_data=json_data)
-    return task_queue
+        task_queue_for_distribute.add_task(task_id=j, task_data=json_data)
+    return task_queue_for_distribute
 
 
 def distribute_tasks_for_minions(task_queue_to_distribute):
@@ -141,29 +134,96 @@ def validate_password(hashed_password, password):
         return False
 
 
-def get_password(hashed_password_index, hashed_password, output_file):
+def get_password(hashed_password_index, hashed_password):
     """
-    this function search for the password that matches the hashed password.
-    :param output_file: the file we creating with all of the solved passwords
-    :param hashed_password_index: hashed password index we are searching
-    :param hashed_password: hashed password we are searching
+    Searches for the password that matches the hashed password using a distributed task system.
+
+    This function initiates a search for the password corresponding to the provided hashed password
+    index and the hashed password. It utilizes a task distribution mechanism to search for the password
+    by assigning tasks to multiple minions (or workers) within a distributed system.
+
+    Parameters:
+    - hashed_password_index (int): Index of the hashed password being searched.
+    - hashed_password (str): Hashed password that needs to be matched to find the original password.
+
+    Global Variables Used:
+    - NUMBER_OF_TASKS (int): Represents the number of tasks generated for minions.
+    - task_queue (list): Holds the tasks generated for the minions.
+
+    Task Distribution Process:
+    - task_queue: Generates tasks for minions using the 'generate_tasks_for_minions()' function,
+      distributing tasks related to the provided hashed password among multiple workers.
+    - distribute_tasks_for_minions(): Assigns the generated task queue to the minions for execution.
+
+    Progress Monitoring:
+    - Prints the distribution of tasks to minions for the specific hashed word index.
+    - Executes a loop to monitor if the password is found by the minions. Waits until the corresponding
+      password is discovered before proceeding.
+    - Utilizes time.sleep() to avoid constant checking and reduce processing overhead.
+
+    Output:
+    - Upon discovery of the password, prints a message indicating the found password for the specific
+      hashed password index.
+
+    Note:
+    - This function assumes the existence and functionality of 'generate_tasks_for_minions()' and
+      'distribute_tasks_for_minions()' functions, along with 'found_passwords' (a data structure used to
+      track the discovered passwords).
+
+    Returns:
+    None
     """
     global NUMBER_OF_TASKS, task_queue
     task_queue = generate_tasks_for_minions(hashed_password, NUMBER_OF_TASKS, hashed_password_index)
     distribute_tasks_for_minions(task_queue)
-    print(f"Tasks distributed to minions for hashed word {hashed_password_index}")
+    print(f"Tasks distributed to minions for hashed word number {hashed_password_index}")
     while not found_passwords[hashed_password_index]:
         time.sleep(1)
-    print("found password")
+    print(f"Found password number {hashed_password_index}")
 
 
 def code_cracking_task():
-    global hash_codes, passwords, SOLVING
-    for i in range(len(hash_codes)):
-        get_password(i, hash_codes[i], passwords)
-    SOLVING = False
-    print("Done cracking!")
-    time.sleep(5)
+    """
+    Crack the hash codes to passwords and save passwords to a file ('output.txt') in case of an error.
+
+    This function attempts to crack the hash codes provided in the global variables hash_codes
+    using the associated passwords list. It updates the global variable SOLVING to False after
+    the cracking process is complete.
+
+    It iterates through the hash codes and tries to find their corresponding passwords by
+    calling the get_password function. If any error occurs during the cracking process for
+    a specific hash code, it will be caught and printed, allowing the function to continue
+    attempting to crack the remaining codes.
+
+    In the event of an error, the function writes the attempted passwords to a file named
+    'output.txt' to provide a record of the cracking attempt.
+
+    Note:
+    - Requires get_password() function to be defined and accessible.
+    - Relies on global variables: hash_codes, passwords, SOLVING.
+
+    Raises:
+    - Exception: Any unexpected errors during the cracking process.
+
+    Returns:
+    None
+    """
+    global hash_codes, hash_codes_processed, SOLVING
+    try:
+        for i in range(len(hash_codes)):
+            get_password(i, hash_codes[i])
+        SOLVING = False
+        print("Done Cracking The Codes!")
+    except Exception as e:
+        print(f"An error occurred during code cracking: {e}")
+        # Further error handling can be added based on the specific exception type
+        # For example, log the error, attempt recovery, or raise a custom exception
+    finally:
+        # Always write passwords to a file, whether an error occurred or not
+        passwords = [entry.split(':')[-1].strip() for entry in hash_codes_processed]
+        # Write extracted passwords to the 'output.txt' file
+        with open('output.txt', 'w') as output_file:
+            output_file.write("\n".join(passwords))
 
 
 @app.route('/get_task', methods=['GET'])
@@ -182,12 +242,12 @@ def get_task():
     """
     global task_queue
     task = task_queue.get_first_task()
-    if SOLVING and not task is None:
+    if SOLVING and task is not None:
         return jsonify(task)
     elif SOLVING:
-        return jsonify({"message": "Tasks are being processed, try again shortly"}), 202
+        return server_overload(None)
     else:
-        return jsonify({"message": "Master is not solving anything at the moment, redirect to 'link'"
+        return jsonify({"message": f"Master is not solving anything at the moment, redirect to {MASTER}/"
                                    " in order to upload a new file to solve",
                         "link": "/"}), 203
 
@@ -202,19 +262,18 @@ def download_file(name):
         Returns:
             File response: The uploaded file + File uploaded successfully message.
     """
-    global hash_codes, found_passwords, passwords, SOLVING
+    global hash_codes, found_passwords, hash_codes_processed, SOLVING
     if os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], name)):
         with open(os.path.join(app.config['UPLOAD_FOLDER'], name), 'r') as f:
             # Start the code cracking process in a separate thread
-            # TODO: display tick messages for successful solving.
             hash_codes = f.read().split('\n')
-            passwords = hash_codes
-            found_passwords = [False for password in passwords]
+            hash_codes_processed = hash_codes
+            found_passwords = [False for _ in hash_codes_processed]
             message = f'File "{name}" uploaded successfully! The cracking process has started.'
+            SOLVING = True
             cracking_thread = threading.Thread(target=code_cracking_task)
             cracking_thread.start()
-            SOLVING = True
-        return render_template('show_content.html', content=passwords, message=message)
+        return render_template('show_content.html', content=hash_codes_processed, message=message)
     else:
         return 'File Not Found'
 
@@ -241,28 +300,48 @@ def receive_password_status():
     Returns:
     JSON: Flag indicating if the hashed word is already solved.
     """
-    data = request.get_json()
-    if data:
-        hashed_password_index = data.get("hashed_password_index")
-        if 0 <= hashed_password_index < len(hash_codes):
-            # Check if the hashed password index is already solved
-            return {"already_solved": found_passwords[hashed_password_index]}
+    try:
+        data = request.get_json()
+        if data:
+            hashed_password_index = data.get("hashed_password_index")
+            if 0 <= hashed_password_index < len(hash_codes):
+                # Check if the hashed password index is already solved
+                return {"already_solved": found_passwords[hashed_password_index]}
 
-    return {"error": "Invalid data received"}, 400  # Bad Request status for invalid data
+    except (TypeError, KeyError):
+        return invalid_data_received(KeyError)
 
 
 def process_receive_password(data):
+    """
+        Process the received password data from minions.
+
+        Parameters:
+        data (dict): A dictionary containing password-related information received from the minion.
+
+        Notes:
+        - Validates the received password data and checks if the hashed password ID matches with the stored hash_codes.
+        - If the password matches with the hashed password and passes validation, it updates the found passwords list.
+        - If the hashed password ID is incorrect or out of range, it triggers the 422 error handler.
+
+        Returns:
+        str: Success message or error description.
+        """
     global hash_codes, found_passwords
-    solved_password = data.get("password")
-    hashed_password = data.get("hashed_password")
-    hashed_password_id = data.get("hashed_password_id")
-    if 0 <= hashed_password_id < len(hash_codes):
-        if hash_codes[hashed_password_id] == hashed_password and \
-                validate_password(hashed_password, solved_password):
-            if not found_passwords[hashed_password_id]:
-                passwords[
-                    hashed_password_id] += " ->" + f" Solved successfully  \u2713 The password is: {solved_password}"
-                found_passwords[hashed_password_id] = True
+    try:
+        solved_password = data.get("password")
+        hashed_password = data.get("hashed_password")
+        hashed_password_id = data.get("hashed_password_id")
+        if 0 <= hashed_password_id < len(hash_codes):
+            if hash_codes[hashed_password_id] == hashed_password and \
+                    validate_password(hashed_password, solved_password):
+                if not found_passwords[hashed_password_id]:
+                    hash_codes_processed[hashed_password_id] += " ->" + f" Solved successfully" \
+                                                                        f"  \u2713 The password is: {solved_password}"
+                    found_passwords[hashed_password_id] = True
+        return invalid_data_received("hashed_password_id is incorrect")
+    except TypeError as e:
+        return invalid_data_received(e)
 
 
 @app.route('/receive_password', methods=['POST'])
@@ -294,13 +373,42 @@ def receive_password():
         # Create a thread for each request to process it separately
         thread = threading.Thread(target=process_receive_password, args=(data,))
         thread.start()
-    return "Invalid data received", 400  # Bad Request status for invalid data
+    return invalid_data_received(None)
 
 
 @app.route('/get_updated_content')
 def get_updated_content():
-    global passwords
-    return jsonify({'content': passwords})
+    global hash_codes_processed
+    return jsonify({'content': hash_codes_processed})
+
+
+@app.route('/add_minion', methods=['POST'])
+def add_minion():
+    """
+    Adds a new minion address to the global MINIONS list.
+
+    Endpoint URL: /add_minion (Accepts POST request)
+    Request Body (JSON): {'new_address': 'http://new_address:port'}
+
+    Returns:
+    - Updated MINIONS list after adding the new address if successful.
+    - Error message if the address is already in the MINIONS list or if the input is invalid.
+    """
+    try:
+        data = request.get_json()
+        new_address = data.get('new_address')
+
+        if not isinstance(new_address, str):
+            return jsonify({'error': 'The provided address should be a string.'}), 400
+
+        if new_address in MINIONS:
+            return jsonify({'error': 'The provided address is already in the list of minions.'}), 400
+
+        MINIONS.append(new_address)
+        return jsonify({'message': 'New address added successfully', 'updated_minions': MINIONS}), 200
+
+    except Exception as e:
+        return jsonify({'error': f"An error occurred while adding the address: {e}"}), 500
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -342,6 +450,22 @@ def upload_file():
       <input type=submit value=Upload>
     </form>
     '''
+
+
+@app.errorhandler(503)
+def server_overload():
+    return "Service Unavailable. The server is currently overloaded. Please try again later.", 503
+
+
+@app.errorhandler(404)
+def page_not_found():
+    """Custom error handling for 404 Not Found error."""
+    return "The resource could not be found", 404
+
+
+@app.errorhandler(422)
+def invalid_data_received(e):
+    return f"Unprocessable Entity. Invalid data received. {e}", 422
 
 
 if __name__ == '__main__':
