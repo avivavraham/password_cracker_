@@ -12,6 +12,6 @@ def generate_md5_hash(phone_number):
 
 
 print(True and False)
-phone = '050-0000023'
+phone = '050-1000001'
 print(hashlib.md5(phone.encode()).hexdigest())
 print(generate_md5_hash(23))

@@ -14,19 +14,17 @@ import time
 # TODO: add read me file
 
 
-
-
-
 PORT = 5001
 MINION_ID = 1
 # Master's address
 MASTER_ADDRESS = 'http://127.0.0.1:5000'  # Modify the address and port accordingly
+CHECK_STATUS_AFTER = 1000000
 app = Flask(__name__)
 
 
 def get_task_from_master():
     try:
-        response = requests.get('http://127.0.0.1:5000/get_task')
+        response = requests.get(MASTER_ADDRESS + '/get_task')
         if response.status_code == 200:
             task_details = response.json()
             # Process the received task details
@@ -69,6 +67,60 @@ def generate_md5_digest(input_string):
     return md5_digest
 
 
+def receive_password_status(hashed_password, hashed_password_index):
+    master_status_url = MASTER_ADDRESS + '/receive_password_status'
+    # Send a POST request to the master to check the status of the hashed password
+    # Create the data payload in JSON format
+    payload = {
+        "hashed_password": hashed_password,
+        "hashed_password_index": hashed_password_index
+    }
+    response = requests.post(master_status_url, json=payload)
+
+    # Ensure the response is successful (status code 200) and contains JSON data
+    if response.status_code == 200:
+        result = response.json()
+        if "already_solved" in result:
+            # If the password is already solved, return the status
+            if result["already_solved"]:  # TODO: STOP working and receive new task
+                return True, " "
+            return False, "keep looking"
+        else:
+            # Handle other scenarios based on the received data
+            return False, "No status received"
+    else:
+        # Handle other status codes if needed
+        return False, f"Request failed with status code: {response.status_code}"
+
+
+def send_password_to_master(password, hashed_password, hashed_password_index):
+    print(f"found a match with: {password}")
+    # Endpoint details of the master
+    master_endpoint = MASTER_ADDRESS + '/receive_password'
+
+    # Information of the found password
+    password_data = {
+        "password": password,
+        "hashed_password": hashed_password,
+        "hashed_password_id": hashed_password_index,
+        "minion_id": MINION_ID,
+        "port": PORT
+    }
+    # Sending the found password to the master
+    try:
+        response = requests.post(master_endpoint, json=password_data)
+        if response.status_code == 200:
+            print("Password sent successfully to the master.")
+            return True
+        else:
+            print("Failed to send password to the master.")
+            # TODO: check if to send again or the password been already found
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending password to the master: {e}")
+        return False
+
+
 def crack(min_range, max_range, hashed_password, hashed_password_index):
     """
     this function iterates over the range to found the password that matches the hashed_password
@@ -77,63 +129,22 @@ def crack(min_range, max_range, hashed_password, hashed_password_index):
     :param min_range: the minimum range we want to iterate for
     :param hashed_password: the MD5 hash we are looking to find a match for
     """
-    time.sleep(0.5)
-    print(f'minion {MINION_ID} has started cracking the password')
     halt = False
     for i in range(min_range, max_range,):
-        # once in a 1000 iteration minion will look up to see if there was a stop message from the Master
-        if i % 1000000 == 0:
+        # once in a while, the minion will look up to see if there was a stop message from the Master
+        if i % CHECK_STATUS_AFTER == 0:
             try:
-                master_status_url = 'http://127.0.0.1:5000/receive_password_status'
-                # Send a POST request to the master to check the status of the hashed password
-                # Create the data payload in JSON format
-                payload = {
-                    "hashed_password": hashed_password,
-                    "hashed_password_index": hashed_password_index
-                }
-                response = requests.post(master_status_url, json=payload)
-
-                # Ensure the response is successful (status code 200) and contains JSON data
-                if response.status_code == 200:
-                    result = response.json()
-                    if "already_solved" in result:
-                        # If the password is already solved, return the status
-                        if result["already_solved"]:  # TODO: STOP working and receive new task
-                            halt = True
-                    else:
-                        # Handle other scenarios based on the received data
-                        return "No status received"
-                else:
-                    # Handle other status codes if needed
-                    return f"Request failed with status code: {response.status_code}"
+                halt, msg = receive_password_status(hashed_password, hashed_password_index)
+                if not halt:
+                    print(msg)
             except requests.RequestException as e:
                 # Handle connection errors or exceptions
                 return f"Connection error: {e}"
         # minion has found a match
         if generate_md5_digest(format_phone_number(i)) == hashed_password:
+            print("CRACKED!")
             password = format_phone_number(i)
-            print(f"found a match with: {password}")
-            halt = True
-            # Endpoint details of the master
-            master_endpoint = f'http://127.0.0.1:5000/receive_password'
-
-            # Information of the found password
-            password_data = {
-                "password": password,
-                "hashed_password": hashed_password,
-                "hashed_password_id": hashed_password_index,
-                "minion_id": MINION_ID,
-                "port": PORT
-            }
-            # Sending the found password to the master
-            try:
-                response = requests.post(master_endpoint, json=password_data)
-                if response.status_code == 200:
-                    print("Password sent successfully to the master.")
-                else:
-                    print("Failed to send password to the master.")
-            except requests.exceptions.RequestException as e:
-                print(f"Error sending password to the master: {e}")
+            halt = send_password_to_master(password, hashed_password, hashed_password_index)
         if halt:
             break
     if not halt:
@@ -152,26 +163,6 @@ def format_phone_number(number):
     # Format the number as 05X-XXXXXXX
     phone_number = f"05{formatted_number[:1]}-{formatted_number[1:]}"
     return phone_number
-
-
-def send_response_to_master(response_data):
-    """
-    Sends the cracked password response to the master server.
-
-    Args:
-    response_data (dict): A dictionary containing the cracked password information.
-
-    Returns:
-    JSON: Message indicating the success of sending the response to the master.
-    """
-    try:
-        response = requests.post(f"{MASTER_ADDRESS}/receive_password", json=response_data)
-        if response.status_code == 200:
-            return jsonify({"message": "Password response sent to the master successfully."})
-        else:
-            return jsonify({"message": f"Failed to send password response. Status code: {response.status_code}"})
-    except requests.exceptions.RequestException as e:
-        return jsonify({"message": f"Error sending password response to the master: {e}"})
 
 
 @app.route('/receive_task', methods=['POST'])
@@ -207,38 +198,6 @@ def receive_task():
         return jsonify({"message": "received task successfully"})
 
     return jsonify({"message": "data format is incorrect."})
-
-
-@app.route('/password1', methods=['GET'])
-def send_password_to_master():
-    # Define the fixed password to be sent
-    fixed_password_data = {
-        "password": '0500000023',
-        "hashed_password": '09bdfd47607d878bf11a1b38400fd480',
-        "hashed_password_id": 0,
-        "minion_id": f"{MINION_ID}",
-        "port": f"{PORT}"
-    }
-
-    # Send the fixed password data to the master's /receive_password endpoint
-    try:
-        response = requests.post('http://127.0.0.1:5000/receive_password',
-                                 json=fixed_password_data)
-        if response.status_code == 200:
-            return jsonify({"message": "Password sent to master successfully"})
-        else:
-            return jsonify({"message": "Failed to send password to master"})
-    except requests.RequestException as e:
-        return jsonify({"message": f"Error: {e} - Failed to communicate with master"})
-
-
-@app.route('/')
-def welcome():
-    """
-    Welcome screen endpoint.
-    Displays a welcome message when the minion server is accessed.
-    """
-    return "Welcome to the Minion Server!"
 
 
 if __name__ == '__main__':

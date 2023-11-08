@@ -8,6 +8,7 @@ import threading
 import time
 import json
 
+# TODO: update Sharon + Snir
 # TODO: go over all of the code in the master
 # TODO: make sure we can crack few words
 # TODO: add error handling
@@ -205,13 +206,13 @@ def download_file(name):
             # Start the code cracking process in a separate thread
             # TODO: display tick messages for successful solving.
             hash_codes = f.read().split('\n')
-            passwords = ["" for hash_code in hash_codes]
+            passwords = hash_codes
             found_passwords = [False for password in passwords]
             message = f'File "{name}" uploaded successfully! The cracking process has started.'
             cracking_thread = threading.Thread(target=code_cracking_task)
             cracking_thread.start()
             SOLVING = True
-        return render_template('show_content.html', content=hash_codes, message=message)
+        return render_template('show_content.html', content=passwords, message=message)
     else:
         return 'File Not Found'
 
@@ -283,15 +284,13 @@ def receive_password():
         if 0 <= hashed_password_id < len(hash_codes):
             minion_id = data.get("minion_id")
             port = data.get("port")
-            print(hash_codes[hashed_password_id] == hashed_password)
-            print(hash_codes[hashed_password_id])
-            print(hashed_password)
-            print(validate_password(hashed_password, solved_password))
-            if hash_codes[hashed_password_id] == hashed_password and\
+            if hash_codes[hashed_password_id] == hashed_password and \
                     validate_password(hashed_password, solved_password):
-                found_passwords[hashed_password_id] = True
-                passwords[hashed_password_id] = solved_password
-                return "Password received successfully and matched, well done!"
+                if not found_passwords[hashed_password_id]:
+                    passwords[
+                        hashed_password_id] += " ->" + f" Solved successfully  \u2713 The password is: {solved_password}"
+                    found_passwords[hashed_password_id] = True
+                    return "Password received successfully and matched, well done!"
             return "Password received successfully but didn't match."
 
     return "Invalid data received", 400  # Bad Request status for invalid data
@@ -299,8 +298,8 @@ def receive_password():
 
 @app.route('/get_updated_content')
 def get_updated_content():
-    global hash_codes
-    return jsonify({'content': hash_codes})
+    global passwords
+    return jsonify({'content': passwords})
 
 
 @app.route('/', methods=['GET', 'POST'])
