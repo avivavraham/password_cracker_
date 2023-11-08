@@ -1,25 +1,45 @@
 from flask import Flask, request, jsonify
 import json
+import concurrent.futures
+import multiprocessing
 import hashlib
 import requests
 import threading
 import time
 
 # TODO: go over all of the code in the minion
-# TODO: make sure we can crack few words
-# TODO: add a new minion to the system
 # TODO: add error handling
+# TODO: Get Task endpoint
 # TODO: add documentation to all methods + TaskQueue
 # TODO: add parallelism to the system
 # TODO: add read me file
 
 
-PORT = 5001
-MINION_ID = 1
+PORT = 5003
+MINION_ID = 3
 # Master's address
 MASTER_ADDRESS = 'http://127.0.0.1:5000'  # Modify the address and port accordingly
-CHECK_STATUS_AFTER = 1000000
+CHECK_STATUS_AFTER = 100000
+SPLIT = 4 # number of processes to split tasks for.
 app = Flask(__name__)
+
+
+def split_task(min_value, max_value, hashed_password, hashed_password_index):
+    # create a split array from the range
+    range_for_process = (max_value - min_value + 1) // SPLIT
+    split_of_range = [(min_value + i * range_for_process, min_value + (i + 1) * range_for_process,
+                       hashed_password, hashed_password_index) for i in range(SPLIT - 1)]
+    split_of_range.append((split_of_range[-1][1], max_value, hashed_password, hashed_password_index))
+    processes = []
+    for i in range(SPLIT):
+        p = multiprocessing.Process(target=crack, args=split_of_range[i])
+        processes.append(p)
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join()
+    # after all the processes have done we will request a new task from the master.
+    get_task_from_master()
 
 
 def get_task_from_master():
@@ -28,19 +48,20 @@ def get_task_from_master():
         if response.status_code == 200:
             task_details = response.json()
             # Process the received task details
-            if "min_value" in task_details and "max_value" in task_details and\
-                    "hashed_password" in task_details and "hashed_password_index" in task_details:
+            if "data" in task_details:
                 # Extract the required task details
+                task_id = task_details['id']
+                print(f"getting task {task_id} from the master")
+                task_details = json.loads(task_details['data'])
                 min_value = task_details["min_value"]
                 max_value = task_details["max_value"]
                 hashed_password = task_details["hashed_password"]
                 hashed_password_index = task_details["hashed_password_index"]
-
-                # Use the task details for the minion's operations
-                # Example: start the password cracking process using these details
-                crack(min_value, max_value, hashed_password, hashed_password_index)
+                # split the task concurrently between different processes.
+                split_task(min_value, max_value, hashed_password, hashed_password_index)
             else:
                 print("Incomplete task details received")
+                print(task_details)
         else:
             print(f"Error getting task. Status code: {response.status_code}")
     except requests.exceptions.RequestException as e:
@@ -82,9 +103,9 @@ def receive_password_status(hashed_password, hashed_password_index):
         result = response.json()
         if "already_solved" in result:
             # If the password is already solved, return the status
-            if result["already_solved"]:  # TODO: STOP working and receive new task
+            if result["already_solved"]:
                 return True, " "
-            return False, "keep looking"
+            return False, f"keep looking for {hashed_password_index}"
         else:
             # Handle other scenarios based on the received data
             return False, "No status received"
@@ -130,9 +151,9 @@ def crack(min_range, max_range, hashed_password, hashed_password_index):
     :param hashed_password: the MD5 hash we are looking to find a match for
     """
     halt = False
-    for i in range(min_range, max_range,):
+    for i in range(min_range, max_range):
         # once in a while, the minion will look up to see if there was a stop message from the Master
-        if i % CHECK_STATUS_AFTER == 0:
+        if i == min_range + CHECK_STATUS_AFTER:
             try:
                 halt, msg = receive_password_status(hashed_password, hashed_password_index)
                 if not halt:
@@ -147,9 +168,6 @@ def crack(min_range, max_range, hashed_password, hashed_password_index):
             halt = send_password_to_master(password, hashed_password, hashed_password_index)
         if halt:
             break
-    if not halt:
-        # minion has not found the password for that range, minion will ask for a new task.
-        get_task_from_master()
 
 
 def format_phone_number(number):
@@ -167,6 +185,7 @@ def format_phone_number(number):
 
 @app.route('/receive_task', methods=['POST'])
 def receive_task():
+
     """
     Endpoint to receive a task from the master server.
 
@@ -192,7 +211,7 @@ def receive_task():
         max_value = data.get("max_value")
         hashed_password = data.get("hashed_password")
         hashed_password_index = data.get("hashed_password_index")
-        cracking_thread = threading.Thread(target=crack,
+        cracking_thread = threading.Thread(target=split_task,
                                            args=(min_value, max_value, hashed_password, hashed_password_index))
         cracking_thread.start()
         return jsonify({"message": "received task successfully"})
@@ -201,4 +220,4 @@ def receive_task():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=PORT)  # Change the port number for each minion
+    app.run(debug=False, port=PORT)  # Change the port number for each minion

@@ -10,8 +10,13 @@ def generate_md5_hash(phone_number):
 
     return md5_hash
 
-
-print(True and False)
-phone = '050-1000001'
-print(hashlib.md5(phone.encode()).hexdigest())
-print(generate_md5_hash(23))
+max_value = 86348297
+min_value = 27126586
+SPLIT = 4
+hashed_password = "8634"
+hashed_password_index = 0
+range_for_process = (max_value - min_value + 1) // SPLIT
+split_of_range = [(i * range_for_process, (i + 1) * range_for_process,
+                   hashed_password, hashed_password_index) for i in range(SPLIT - 1)]
+split_of_range.append((split_of_range[-1][1], max_value, hashed_password, hashed_password_index))
+print(split_of_range)
