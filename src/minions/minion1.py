@@ -1,23 +1,26 @@
 from flask import Flask, request, jsonify
+from typing import Union, Tuple
 import json
 import multiprocessing
 import hashlib
 import requests
 import threading
+import yaml
 
-# TODO: add read me file
 
+with open('C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\config\\config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
-PORT = 5001
 MINION_ID = 1
-MASTER_ADDRESS = 'http://127.0.0.1:5000'  # Modify the address and port to the master server address
-CHECK_STATUS_AFTER = 100000  # check status after this amount of iterations
+PORT = config['MINIONS'][MINION_ID-1]['port']
+MASTER_ADDRESS = f"{config['MASTER']['address']}:{config['MASTER']['port']}"  # Modify the address and port to the master server address
+CHECK_STATUS_AFTER = config['CHECK_STATUS_AFTER']  # check status after this amount of iterations
 # to make sure we don't look for a password who's been already found.
-SPLIT = 4  # number of processes to run concurrently on each task.
+SPLIT = config['SPLIT']  # number of processes to run concurrently on each task.
 app = Flask(__name__)
 
 
-def split_task(min_value, max_value, hashed_password, hashed_password_index):
+def split_task(min_value: int, max_value: int, hashed_password: str, hashed_password_index: int) -> None:
     """
     Splits the task of cracking a hashed password range into smaller ranges for concurrent processing.
 
@@ -63,7 +66,7 @@ def split_task(min_value, max_value, hashed_password, hashed_password_index):
         # Additional error handling or logging can be added based on the specific requirements.
 
 
-def get_task_from_master():
+def get_task_from_master() -> None:
     """
         Retrieves a task from the Master server.
 
@@ -112,7 +115,7 @@ def get_task_from_master():
         print(f"Connection error with master: {e}")
 
 
-def generate_md5_digest(input_string):
+def generate_md5_digest(input_string: str) -> str:
     """
     this function generates MD5 hashing for a given string
     :param input_string: a phone number to be hashed
@@ -132,7 +135,7 @@ def generate_md5_digest(input_string):
     return md5_digest
 
 
-def receive_password_status(hashed_password, hashed_password_index):
+def receive_password_status(hashed_password: str, hashed_password_index: int) -> Tuple[bool, str]:
     """
         Sends the solved password to the master for processing.
 
@@ -172,12 +175,12 @@ def receive_password_status(hashed_password, hashed_password_index):
                 continue
         except requests.exceptions.RequestException as e:
             print(f"Error sending password to the master: {e}")
-            return False
+            return False, ""
     print("Failed to send password to the master. Try to send it again.")
-    return False
+    return False, ""
 
 
-def send_password_to_master(password, hashed_password, hashed_password_index):
+def send_password_to_master(password: str, hashed_password: str, hashed_password_index: int) -> bool:
     """
         Sends the solved password to the master for processing.
 
@@ -220,7 +223,7 @@ def send_password_to_master(password, hashed_password, hashed_password_index):
     return False
 
 
-def crack(min_range, max_range, hashed_password, hashed_password_index):
+def crack(min_range: int, max_range: int, hashed_password: str, hashed_password_index: int) -> Tuple[str, int]:
     """
     Iterates over a given range to find the password that matches the provided hashed password.
 
@@ -266,7 +269,7 @@ def crack(min_range, max_range, hashed_password, hashed_password_index):
             break
 
 
-def format_phone_number(number):
+def format_phone_number(number: int) -> str:
     """
     :param number: 8 digits of the phone number suffix to be processed
     :return: phone number with the shape of: 05X-XXXXXXX
@@ -280,12 +283,12 @@ def format_phone_number(number):
 
 
 @app.errorhandler(422)
-def invalid_data_received(e):
+def invalid_data_received(e) -> Tuple[str, int]:
     return f"Unprocessable Entity. Invalid data received. {e}", 422
 
 
 @app.route('/task', methods=['POST'])
-def receive_task():
+def receive_task() -> Union[jsonify, Tuple[str, int]]:
 
     """
     Endpoint to receive a task from the master server.
@@ -323,7 +326,7 @@ def receive_task():
 
 
 @app.route('/address/<minion_address>', methods=['POST'])
-def suggest_add_address(minion_address):
+def suggest_add_address(minion_address: str) -> Tuple[str, int]:
     """
     Endpoint for suggesting the minions addresses to be added to the master's list.
 

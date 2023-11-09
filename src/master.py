@@ -1,37 +1,38 @@
 from flask import Flask, flash, request, redirect, url_for, jsonify, render_template
+from typing import List, Dict, Union
 from werkzeug.utils import secure_filename
-from taskQueue.taskQueue import TaskQueue
+from taskQueue import TaskQueue
 import requests
 import os
 import hashlib
 import threading
 import time
 import json
+import yaml
 
-# TODO: divide the code into classes
-# TODO: reduce the amount of global variables
-# TODO: add read me file + type hints
-# TODO: add a configuration file
 
+with open('C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\config\\config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 # please insert the minions addresses here
-MASTER = 'http://127.0.0.1:5000'
-MINIONS = ['http://127.0.0.1:5001', 'http://127.0.0.1:5002', 'http://127.0.0.1:5003']
-UPLOAD_FOLDER = 'C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\input_files'
-ALLOWED_EXTENSIONS = {'txt'}
+MASTER = config['MASTER']['address']
+# Construct the MINIONS list
+MINIONS = [f"{minion['address']}:{minion['port']}" for minion in config['MINIONS']]
+UPLOAD_FOLDER = config['UPLOAD_FOLDER']
+ALLOWED_EXTENSIONS = config['ALLOWED_EXTENSIONS']
 headers = {'Content-Type': 'application/json'}  # Set the Content-Type header
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-SOLVING = False  # boolean flag to indicate if the server is currently solving the md5 hashing.
-hash_codes = []  # List to store hash codes from the uploaded file.
-hash_codes_processed = []  # List to store the passwords that were founded.
-found_passwords = []  # List to indicate the passwords that were founded.
+SOLVING: bool = False  # boolean flag to indicate if the server is currently solving the md5 hashing.
+hash_codes: List[str] = []  # List to store hash codes from the uploaded file.
+hash_codes_processed: List[str] = []  # List to store the passwords that were founded.
+found_passwords: List[bool] = []  # List to indicate the passwords that were founded.
 task_queue = TaskQueue()  # task queue for the current unsolved hashed password.
-NUMBER_OF_TASKS = 12  # cannot be zero.
+NUMBER_OF_TASKS = config['NUMBER_OF_TASKS']  # cannot be zero.
 
 
-def allowed_file(filename):
+def allowed_file(filename: str) -> bool:
     """
     Check if the provided filename has an allowed extension.
     Args:
@@ -42,7 +43,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def generate_tasks_for_minions(hashed_password, split, hashed_password_index):
+def generate_tasks_for_minions(hashed_password: str, split: int, hashed_password_index: int) -> TaskQueue:
     """
     this function generates {split} amount of tasks for a specific hashed password.
     :param hashed_password_index: the hashed password index to generate tasks for.
@@ -76,7 +77,7 @@ def generate_tasks_for_minions(hashed_password, split, hashed_password_index):
     return task_queue_for_distribute
 
 
-def distribute_tasks_for_minions(task_queue_to_distribute):
+def distribute_tasks_for_minions(task_queue_to_distribute: TaskQueue) -> None:
     """
         Distributes tasks to multiple minions.
 
@@ -115,7 +116,7 @@ def distribute_tasks_for_minions(task_queue_to_distribute):
             print(f"Connection error with minion {minion_address}: {e}")
 
 
-def validate_password(hashed_password, password):
+def validate_password(hashed_password: str, password: str) -> bool:
     """
     Validates whether a password matches its MD5 hash.
 
@@ -137,7 +138,7 @@ def validate_password(hashed_password, password):
         return False
 
 
-def get_password(hashed_password_index, hashed_password):
+def get_password(hashed_password_index: int, hashed_password: str) -> None:
     """
     Searches for the password that matches the hashed password using a distributed task system.
 
@@ -257,7 +258,7 @@ def get_task():
 
 # Function to serve the uploaded file content and success message
 @app.route('/uploads/<name>')
-def download_file(name):
+def download_file(name: str) -> str:
     """
         Serve the uploaded file to the user.
         Args:
@@ -282,7 +283,7 @@ def download_file(name):
 
 
 @app.route('/status', methods=['POST'])
-def receive_password_status():
+def receive_password_status() -> Dict[str, Union[bool, List[bool]]]:
     """
     Endpoint to check the status of a hashed password by its index.
     Minions can query to check if a hashed word is already solved or not.
@@ -315,7 +316,7 @@ def receive_password_status():
         return invalid_data_received(KeyError)
 
 
-def process_receive_password(data):
+def process_receive_password(data: dict) -> str:
     """
         Process the received password data from minions.
 
@@ -348,7 +349,7 @@ def process_receive_password(data):
 
 
 @app.route('/password', methods=['POST'])
-def receive_password():
+def receive_password() -> str:
     """
     Endpoint to receive solved passwords from minions.
     This function will receive updates from the minions when they solve a password hash.
@@ -472,4 +473,4 @@ def invalid_data_received(e):
 
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(debug=config['FLASK']['DEBUG'])
