@@ -85,7 +85,7 @@ def get_task_from_master():
         - requests.exceptions.RequestException: Raised when there's a connection error with the Master server.
         """
     try:
-        response = requests.get(MASTER_ADDRESS + '/get_task')
+        response = requests.get(MASTER_ADDRESS + '/task')
         if response.status_code == 200:
             task_details = response.json()
             # Process the received task details
@@ -144,29 +144,37 @@ def receive_password_status(hashed_password, hashed_password_index):
         Returns:
         - bool: True if the password is successfully sent to the master; False otherwise.
     """
-    master_status_url = MASTER_ADDRESS + '/receive_password_status'
+    master_status_url = MASTER_ADDRESS + '/status'
     # Send a POST request to the master to check the status of the hashed password
     # Create the data payload in JSON format
     payload = {
         "hashed_password": hashed_password,
         "hashed_password_index": hashed_password_index
     }
-    response = requests.post(master_status_url, json=payload)
-
-    # Ensure the response is successful (status code 200) and contains JSON data
-    if response.status_code == 200:
-        result = response.json()
-        if "already_solved" in result:
-            # If the password is already solved, return the status
-            if result["already_solved"]:
-                return True, " "
-            return False, f"keep looking for {hashed_password_index}"
-        else:
-            # Handle other scenarios based on the received data
-            return False, "No status received"
-    else:
-        # Handle other status codes if needed
-        return False, f"Request failed with status code: {response.status_code}"
+    max_retries = 3  # Define the maximum number of retries
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            response = requests.post(master_status_url, json=payload)
+            # Ensure the response is successful (status code 200) and contains JSON data
+            if response.status_code == 200:
+                result = response.json()
+                if "already_solved" in result:
+                    # If the password is already solved, return the status
+                    if result["already_solved"]:
+                        return True, " "
+                    return False, f"keep looking for {hashed_password_index}"
+                else:
+                    # Handle other scenarios based on the received data
+                    return False, "No status received"
+            elif response.status_code == 503:
+                attempt += 1  # Retry attempts
+                continue
+        except requests.exceptions.RequestException as e:
+            print(f"Error sending password to the master: {e}")
+            return False
+    print("Failed to send password to the master. Try to send it again.")
+    return False
 
 
 def send_password_to_master(password, hashed_password, hashed_password_index):
@@ -181,7 +189,7 @@ def send_password_to_master(password, hashed_password, hashed_password_index):
         Returns:
         - bool: True if the password is successfully sent to the master; False otherwise.
         """
-    master_endpoint = MASTER_ADDRESS + '/receive_password'
+    master_endpoint = MASTER_ADDRESS + '/password'
     password_data = {
         "password": password,
         "hashed_password": hashed_password,
@@ -189,20 +197,27 @@ def send_password_to_master(password, hashed_password, hashed_password_index):
         "minion_id": MINION_ID,
         "port": PORT
     }
-
-    try:
-        response = requests.post(master_endpoint, json=password_data)
-        if response.status_code == 200:
-            return True
-        elif response.status_code == 422:
-            print("Hashed password ID is incorrect.")
+    max_retries = 3  # Define the maximum number of retries
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            response = requests.post(master_endpoint, json=password_data)
+            if response.status_code == 200:
+                return True
+            elif response.status_code == 422:
+                print("Hashed password ID is incorrect.")
+                return False
+            elif response.status_code == 503:  # master overload
+                attempt += 1  # Retry attempts
+                continue
+            else:
+                if attempt == 3:
+                    print("Didn't succeed sending password to the master.")
+        except requests.exceptions.RequestException as e:
+            print(f"Error sending password to the master: {e}")
             return False
-        else:
-            print("Failed to send password to the master. Try to send it again.")
-            return False
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending password to the master: {e}")
-        return False
+    print("Failed to send password to the master. Try to send it again.")
+    return False
 
 
 def crack(min_range, max_range, hashed_password, hashed_password_index):
@@ -269,7 +284,7 @@ def invalid_data_received(e):
     return f"Unprocessable Entity. Invalid data received. {e}", 422
 
 
-@app.route('/receive_task', methods=['POST'])
+@app.route('/task', methods=['POST'])
 def receive_task():
 
     """
@@ -307,22 +322,23 @@ def receive_task():
         return invalid_data_received()
 
 
-@app.route('/suggest_add_address/<minion_address>', methods=['POST'])
+@app.route('/address/<minion_address>', methods=['POST'])
 def suggest_add_address(minion_address):
     """
     Endpoint for suggesting the minions addresses to be added to the master's list.
 
-    Endpoint URL: /suggest_add_address/<minion_address> (Accepts POST request)
+    Endpoint URL: /address/<minion_address> (Accepts POST request)
     URL Parameter: minion_address (string)
 
     Returns:
     - Response from the master server after attempting to suggest adding the address.
     """
+
     try:
         if not isinstance(minion_address, str):
             return 'The provided address should be a string.', 400
 
-        response = requests.post(f"{MASTER_ADDRESS}/add_minion", json={'new_address': minion_address})
+        response = requests.post(f"{MASTER_ADDRESS}/minion", json={'new_address': minion_address})
         return response.text, response.status_code
 
     except requests.RequestException as e:

@@ -8,7 +8,11 @@ import threading
 import time
 import json
 
-# TODO: add read me file
+# TODO: divide the code into classes
+# TODO: reduce the amount of global variables
+# TODO: add read me file + type hints
+# TODO: add a configuration file
+
 
 # please insert the minions addresses here
 MASTER = 'http://127.0.0.1:5000'
@@ -102,8 +106,7 @@ def distribute_tasks_for_minions(task_queue_to_distribute):
         try:
             task = task_queue_to_distribute.get_first_task()
             if task is not None:
-                # Assuming the minion's API endpoint is '/receive_task'
-                response = requests.post(minion_address + '/receive_task', data=task["data"], headers=headers)
+                response = requests.post(minion_address + '/task', data=task["data"], headers=headers)
                 if response.status_code == 200:
                     print(f"Task sent to {minion_address} successfully.")
                 else:
@@ -178,7 +181,7 @@ def get_password(hashed_password_index, hashed_password):
     distribute_tasks_for_minions(task_queue)
     print(f"Tasks distributed to minions for hashed word number {hashed_password_index}")
     while not found_passwords[hashed_password_index]:
-        time.sleep(1)
+        time.sleep(0.5)
     print(f"Found password number {hashed_password_index}")
 
 
@@ -226,7 +229,7 @@ def code_cracking_task():
             output_file.write("\n".join(passwords))
 
 
-@app.route('/get_task', methods=['GET'])
+@app.route('/task', methods=['GET'])
 def get_task():
     """
     Provides tasks for minions to work on from the task queue.
@@ -278,7 +281,7 @@ def download_file(name):
         return 'File Not Found'
 
 
-@app.route('/receive_password_status', methods=['POST'])
+@app.route('/status', methods=['POST'])
 def receive_password_status():
     """
     Endpoint to check the status of a hashed password by its index.
@@ -344,7 +347,7 @@ def process_receive_password(data):
         return invalid_data_received(e)
 
 
-@app.route('/receive_password', methods=['POST'])
+@app.route('/password', methods=['POST'])
 def receive_password():
     """
     Endpoint to receive solved passwords from minions.
@@ -376,13 +379,13 @@ def receive_password():
     return invalid_data_received(None)
 
 
-@app.route('/get_updated_content')
+@app.route('/content')
 def get_updated_content():
     global hash_codes_processed
     return jsonify({'content': hash_codes_processed})
 
 
-@app.route('/add_minion', methods=['POST'])
+@app.route('/minion', methods=['POST'])
 def add_minion():
     """
     Adds a new minion address to the global MINIONS list.

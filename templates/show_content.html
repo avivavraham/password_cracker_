@@ -6,7 +6,7 @@
     <script type="text/javascript">
         function refreshContent() {
             $.ajax({
-                url: '/get_updated_content',
+                url: '/content',
                 type: 'GET',
                 success: function(response) {
                     var content = response.content;

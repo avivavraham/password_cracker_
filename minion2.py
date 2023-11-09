@@ -5,7 +5,7 @@ import hashlib
 import requests
 import threading
 
-# TODO: add read me file
+# TODO: add read me file + type hints
 
 
 PORT = 5002
