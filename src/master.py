@@ -11,9 +11,21 @@ import json
 import yaml
 
 
-with open('C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\config\\config.yaml', 'r') as file:
-    config = yaml.safe_load(file)
+def get_config_path():
+    """
+    :return: config.yaml file path
+    """
+    # Get the absolute path of the current script
+    script_path = os.path.abspath(__file__)
+    # Go up two levels to the parent directory
+    parent_dir = os.path.abspath(os.path.join(script_path, '..', '..'))
+    # Join the parent directory with the "config" folder and the config file
+    config_path = os.path.join(parent_dir, "config", "config.yaml")
+    return config_path
 
+
+with open(get_config_path(), 'r') as file:
+    config = yaml.safe_load(file)
 # please insert the minions addresses here
 MASTER = config['MASTER']['address']
 # Construct the MINIONS list

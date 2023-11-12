@@ -6,19 +6,31 @@ import hashlib
 import requests
 import threading
 import yaml
+import os
 
 
-with open('C:\\Users\\aviva\\OneDrive\\Desktop\\password_cracker_\\config\\config.yaml', 'r') as file:
+def get_config_path():
+    """
+    :return: config.yaml file path
+    """
+    # Get the absolute path of the current script
+    script_path = os.path.abspath(__file__)
+    # Go up two levels to the parent directory
+    parent_dir = os.path.abspath(os.path.join(script_path, '..', '..', '..'))
+    # Join the parent directory with the "config" folder and the config file
+    config_path = os.path.join(parent_dir, "config", "config.yaml")
+    return config_path
+
+
+with open(get_config_path(), 'r') as file:
     config = yaml.safe_load(file)
-
 MINION_ID = 2
 PORT = config['MINIONS'][MINION_ID-1]['port']
-MASTER_ADDRESS = f"{config['MASTER']['address']}:{config['MASTER']['port']}"  # Modify the address and port to the master server address
+MASTER_ADDRESS = f"{config['MASTER']['address']}:{config['MASTER']['port']}"
 CHECK_STATUS_AFTER = config['CHECK_STATUS_AFTER']  # check status after this amount of iterations
 # to make sure we don't look for a password who's been already found.
 SPLIT = config['SPLIT']  # number of processes to run concurrently on each task.
 app = Flask(__name__)
-
 
 def split_task(min_value: int, max_value: int, hashed_password: str, hashed_password_index: int) -> None:
     """
@@ -346,6 +358,7 @@ def suggest_add_address(minion_address: str) -> Tuple[str, int]:
 
     except requests.RequestException as e:
         return f"Request to the master failed: {e}", 500
+
 
 
 if __name__ == '__main__':
